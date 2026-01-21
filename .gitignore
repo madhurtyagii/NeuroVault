@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.exe
+dist/
+build/
+*.spec
+.env
+*.db
+*.db-journal
+.venv/
+venv/
+node_modules/
+.vscode/
+data/*.db
+*.log
