@@ -4,6 +4,9 @@ from tkinter import filedialog, messagebox
 import sqlite3
 import os
 from datetime import datetime
+from parser import parse_file
+from search_ui import SearchFrame
+from embeddings import add_document_to_db, delete_document_from_db
 
 # App theme
 ctk.set_appearance_mode("dark")
@@ -13,7 +16,7 @@ class NeuroVault:
     def __init__(self):
         self.root = ctk.CTk()
         self.root.title("NeuroVault - AI Second Brain")
-        self.root.geometry("900x700")
+        self.root.geometry("1000x750")
         
         # Database setup
         self.db_path = "data/neurovault.db"
@@ -35,6 +38,7 @@ class NeuroVault:
                 file_path TEXT,
                 file_type TEXT,
                 file_size INTEGER,
+                word_count INTEGER,
                 added_date TEXT
             )
         ''')
@@ -55,9 +59,16 @@ class NeuroVault:
                               font=ctk.CTkFont(size=16))
         subtitle.pack(pady=(5,0))
         
-        # Upload section
-        upload_frame = ctk.CTkFrame(self.root)
-        upload_frame.pack(pady=20, padx=40, fill="x")
+        # Tab view for navigation
+        self.tabview = ctk.CTkTabview(self.root)
+        self.tabview.pack(pady=20, padx=40, fill="both", expand=True)
+        
+        # Tab 1: Files
+        files_tab = self.tabview.add("📚 Files")
+        
+        # Upload section (in Files tab)
+        upload_frame = ctk.CTkFrame(files_tab)
+        upload_frame.pack(pady=20, padx=20, fill="x")
         
         self.upload_btn = ctk.CTkButton(
             upload_frame, 
@@ -76,8 +87,8 @@ class NeuroVault:
         self.status_label.pack(pady=(0,15))
         
         # File list section
-        list_frame = ctk.CTkFrame(self.root)
-        list_frame.pack(pady=10, padx=40, fill="both", expand=True)
+        list_frame = ctk.CTkFrame(files_tab)
+        list_frame.pack(pady=10, padx=20, fill="both", expand=True)
         
         list_header = ctk.CTkLabel(
             list_frame, 
@@ -92,7 +103,7 @@ class NeuroVault:
         
         self.file_listbox = tk.Listbox(
             list_container, 
-            height=15, 
+            height=12, 
             font=("Consolas", 12),
             bg="#2b2b2b",
             fg="#ffffff",
@@ -108,8 +119,8 @@ class NeuroVault:
         self.file_listbox.bind('<<ListboxSelect>>', self.on_file_select)
         
         # Action buttons
-        btn_frame = ctk.CTkFrame(self.root)
-        btn_frame.pack(pady=20, padx=40, fill="x")
+        btn_frame = ctk.CTkFrame(files_tab)
+        btn_frame.pack(pady=20, padx=20, fill="x")
         
         self.preview_btn = ctk.CTkButton(
             btn_frame, 
@@ -130,6 +141,11 @@ class NeuroVault:
             hover_color="#a32e2e"
         )
         self.delete_btn.pack(side="right", padx=10)
+        
+        # Tab 2: Search
+        search_tab = self.tabview.add("🔍 Search")
+        self.search_frame = SearchFrame(search_tab, fg_color="transparent")
+        self.search_frame.pack(fill="both", expand=True)
     
     def upload_file(self):
         """Handle file upload"""
@@ -154,61 +170,58 @@ class NeuroVault:
             file_size = os.path.getsize(file_path)
             file_type = os.path.splitext(filename)[1]
             
-            # Read content (basic for Week 1)
-            content = self.read_file(file_path)
+            # Parse file with proper parser
+            self.status_label.configure(text=f"⏳ Parsing {filename}...")
+            self.root.update()
+            
+            content, word_count = parse_file(file_path)
             
             # Save to database
             self.cursor.execute('''
                 INSERT INTO documents 
-                (filename, content, file_path, file_type, file_size, added_date)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (filename, content, file_path, file_type, file_size, word_count, added_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (
                 filename, 
-                content[:5000],  # First 5000 chars for now
+                content,
                 file_path,
                 file_type,
                 file_size,
+                word_count,
                 datetime.now().isoformat()
             ))
             self.conn.commit()
             
+            # Add to ChromaDB for semantic search
+            self.status_label.configure(text=f"⏳ Adding to AI search index...")
+            self.root.update()
+            add_document_to_db(filename, filename, content)
+            
             self.status_label.configure(
-                text=f"✅ Added: {filename} ({file_size/1024:.1f} KB)"
+                text=f"✅ Added: {filename} ({file_size/1024:.1f} KB, {word_count} words)"
             )
             self.load_files()
-            messagebox.showinfo("Success", f"Added {filename} to NeuroVault!")
+            messagebox.showinfo("Success", 
+                              f"Added {filename}\n\n"
+                              f"Size: {file_size/1024:.1f} KB\n"
+                              f"Words: {word_count:,}\n\n"
+                              f"Now searchable with AI! 🧠")
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to upload:\n{str(e)}")
-    
-    def read_file(self, file_path):
-        """Read file content based on type"""
-        ext = os.path.splitext(file_path)[1].lower()
-        
-        try:
-            if ext in ['.txt', '.py']:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    return f.read()
-            elif ext == '.pdf':
-                return f"[PDF: {os.path.basename(file_path)}]\n(Full PDF parsing in Week 2)"
-            elif ext == '.docx':
-                return f"[DOCX: {os.path.basename(file_path)}]\n(Full DOCX parsing in Week 2)"
-            else:
-                return f"[File: {os.path.basename(file_path)}]"
-        except Exception as e:
-            return f"[Could not read file: {str(e)}]"
+            self.status_label.configure(text="❌ Upload failed")
     
     def load_files(self):
         """Load files into listbox"""
         self.file_listbox.delete(0, tk.END)
         self.cursor.execute('''
-            SELECT filename, file_type, added_date 
+            SELECT filename, file_type, word_count, added_date 
             FROM documents 
             ORDER BY added_date DESC
         ''')
         
         for row in self.cursor.fetchall():
-            display_text = f"{row[1]} {row[0]} ({row[2][:16]})"
+            display_text = f"{row[1]} {row[0]} ({row[2]:,} words) - {row[3][:16]}"
             self.file_listbox.insert(tk.END, display_text)
     
     def on_file_select(self, event):
@@ -225,7 +238,7 @@ class NeuroVault:
         
         idx = selection[0]
         self.cursor.execute('''
-            SELECT filename, content 
+            SELECT filename, content, word_count
             FROM documents 
             ORDER BY added_date DESC 
             LIMIT 1 OFFSET ?
@@ -238,9 +251,23 @@ class NeuroVault:
             preview.title(f"Preview: {result[0]}")
             preview.geometry("700x500")
             
+            # Info label
+            info_label = tk.Label(preview, 
+                                text=f"File: {result[0]} | Words: {result[2]:,}", 
+                                bg="#2b2b2b", fg="#ffffff")
+            info_label.pack(fill="x", padx=10, pady=10)
+            
+            # Text widget
             text_widget = tk.Text(preview, wrap=tk.WORD, font=("Consolas", 11))
-            text_widget.insert("1.0", result[1][:3000])  # First 3000 chars
-            text_widget.pack(fill="both", expand=True, padx=10, pady=10)
+            text_widget.insert("1.0", result[1][:5000])  # First 5000 chars
+            text_widget.pack(fill="both", expand=True, padx=10, pady=(0,10))
+            
+            # Note if truncated
+            if len(result[1]) > 5000:
+                note = tk.Label(preview, 
+                              text="(Showing first 5000 characters - file is longer)", 
+                              bg="#2b2b2b", fg="#999999")
+                note.pack(fill="x", padx=10, pady=(0,10))
     
     def delete_file(self):
         """Delete selected file"""
@@ -253,6 +280,19 @@ class NeuroVault:
             return
         
         idx = selection[0]
+        
+        # Get filename for ChromaDB deletion
+        self.cursor.execute('''
+            SELECT filename FROM documents 
+            ORDER BY added_date DESC 
+            LIMIT 1 OFFSET ?
+        ''', (idx,))
+        filename = self.cursor.fetchone()[0]
+        
+        # Delete from ChromaDB
+        delete_document_from_db(filename)
+        
+        # Delete from SQLite
         self.cursor.execute('''
             DELETE FROM documents 
             WHERE id = (
@@ -266,7 +306,7 @@ class NeuroVault:
         self.load_files()
         self.preview_btn.configure(state="disabled")
         self.delete_btn.configure(state="disabled")
-        self.status_label.configure(text="File deleted")
+        self.status_label.configure(text="File deleted from all indexes")
     
     def run(self):
         """Start the app"""
