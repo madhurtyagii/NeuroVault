@@ -1,35 +1,76 @@
-# NeuroVault - Premium UI Design System (Perplexity-inspired)
+# NeuroVault - Premium UI Design System with Full Theme Support
 
-# Elite Color Palette
-COLORS = {
-    # Backgrounds (ultra smooth dark)
-    'bg_primary': '#0b0d0f',       # Almost black (like Perplexity)
-    'bg_secondary': '#16181c',     # Very subtle gray
-    'bg_tertiary': '#1c1f24',      # Card background
-    'bg_hover': '#23262c',         # Hover state
-    
-    # Accents (SUBTLE professional)
-    'accent_primary': '#5b8def',   # Soft professional blue
-    'accent_hover': '#4d7dd9',     # Slightly darker blue
-    # 'accent_glow': '#5b8def22',    # Glow effect (22 = subtle transparency)
-    
-    # Text (maximum readability)
-    'text_primary': '#e5e5e6',     # Almost white
-    'text_secondary': '#9b9c9e',   # Medium gray
-    'text_tertiary': '#6e7175',    # Subtle gray
-    'text_dim': '#4a4d51',         # Very dim
-    
-    # Status (softer tones)
+import json
+from pathlib import Path
+
+# Config file for theme preference
+CONFIG_FILE = Path(__file__).parent.parent / "data" / "config.json"
+
+# Dark Mode Colors
+DARK_COLORS = {
+    'bg_primary': '#0b0d0f',
+    'bg_secondary': '#16181c',
+    'bg_tertiary': '#1c1f24',
+    'bg_hover': '#23262c',
+    'accent_primary': '#5b8def',
+    'accent_hover': '#4d7dd9',
+    'text_primary': '#e5e5e6',
+    'text_secondary': '#9b9c9e',
+    'text_tertiary': '#6e7175',
+    'text_dim': '#4a4d51',
+    'border_subtle': '#2a2d32',
+    'border_medium': '#35383e',
     'success': '#0dbb87',
     'error': '#ef5350',
     'warning': '#ff9f43',
-    
-    # Borders (barely visible)
-    'border_subtle': '#2a2d32',
-    'border_medium': '#35383e',
 }
 
-# Button Styles - Premium Feel
+# Light Mode Colors
+LIGHT_COLORS = {
+    'bg_primary': '#ffffff',
+    'bg_secondary': '#f8fafc',
+    'bg_tertiary': '#f1f5f9',
+    'bg_hover': '#e2e8f0',
+    'accent_primary': '#3b82f6',
+    'accent_hover': '#2563eb',
+    'text_primary': '#0f172a',
+    'text_secondary': '#475569',
+    'text_tertiary': '#64748b',
+    'text_dim': '#94a3b8',
+    'border_subtle': '#e2e8f0',
+    'border_medium': '#cbd5e1',
+    'success': '#10b981',
+    'error': '#ef4444',
+    'warning': '#f59e0b',
+}
+
+def load_theme():
+    """Load theme preference from config file"""
+    try:
+        CONFIG_FILE.parent.mkdir(exist_ok=True)
+        if CONFIG_FILE.exists():
+            with open(CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                return config.get('theme', 'dark')
+    except:
+        pass
+    return 'dark'
+
+def save_theme(theme):
+    """Save theme preference to config file"""
+    try:
+        CONFIG_FILE.parent.mkdir(exist_ok=True)
+        config = {'theme': theme}
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f)
+    except:
+        pass
+
+# Load current theme
+CURRENT_THEME = load_theme()
+COLORS = DARK_COLORS.copy() if CURRENT_THEME == 'dark' else LIGHT_COLORS.copy()
+
+# Button Styles
 BUTTON_STYLES = {
     'primary': {
         'fg_color': COLORS['accent_primary'],
@@ -37,7 +78,7 @@ BUTTON_STYLES = {
         'text_color': '#ffffff',
         'corner_radius': 10,
         'height': 40,
-        'font': ('Inter', 12, 'normal'),  # Modern font
+        'font': ('Segoe UI', 12, 'normal'),
         'border_width': 0,
     },
     'secondary': {
@@ -48,15 +89,15 @@ BUTTON_STYLES = {
         'border_color': COLORS['border_medium'],
         'corner_radius': 10,
         'height': 40,
-        'font': ('Inter', 12, 'normal'),
+        'font': ('Segoe UI', 12, 'normal'),
     },
     'danger': {
         'fg_color': COLORS['error'],
-        'hover_color': '#d32f2f',
+        'hover_color': '#d32f2f' if CURRENT_THEME == 'dark' else '#dc2626',
         'text_color': '#ffffff',
         'corner_radius': 10,
         'height': 40,
-        'font': ('Inter', 12, 'normal'),
+        'font': ('Segoe UI', 12, 'normal'),
         'border_width': 0,
     },
 }
@@ -77,16 +118,16 @@ FRAME_STYLES = {
     },
 }
 
-# Typography - Hierarchy
+# Typography
 TEXT_STYLES = {
-    'hero': ('Inter', 28, 'bold'),           # Main titles
-    'title': ('Inter', 20, 'bold'),          # Section titles
-    'subtitle': ('Inter', 16, 'bold'),       # Subtitles
-    'heading': ('Inter', 14, 'bold'),        # Card headings
-    'body': ('Inter', 13, 'normal'),         # Body text
-    'body_small': ('Inter', 12, 'normal'),   # Small text
-    'caption': ('Inter', 11, 'normal'),      # Captions/metadata
-    'mono': ('JetBrains Mono', 12, 'normal'), # Code/mono
+    'hero': ('Segoe UI', 28, 'bold'),
+    'title': ('Segoe UI', 20, 'bold'),
+    'subtitle': ('Segoe UI', 16, 'bold'),
+    'heading': ('Segoe UI', 14, 'bold'),
+    'body': ('Segoe UI', 13, 'normal'),
+    'body_small': ('Segoe UI', 12, 'normal'),
+    'caption': ('Segoe UI', 11, 'normal'),
+    'mono': ('Consolas', 12, 'normal'),
 }
 
 # Tab Styles
@@ -101,7 +142,7 @@ TAB_STYLES = {
     'text_color_disabled': COLORS['text_dim'],
 }
 
-# Input Styles - Clean & Modern
+# Input Styles
 INPUT_STYLES = {
     'fg_color': COLORS['bg_secondary'],
     'border_color': COLORS['border_medium'],
@@ -109,7 +150,7 @@ INPUT_STYLES = {
     'text_color': COLORS['text_primary'],
     'placeholder_text_color': COLORS['text_tertiary'],
     'corner_radius': 10,
-    'height': 48,  # Taller for better UX
+    'height': 48,
     'font': TEXT_STYLES['body'],
 }
 

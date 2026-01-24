@@ -1,13 +1,12 @@
 import sys
 from pathlib import Path
-# Add src directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 import customtkinter as ctk
 from files_ui import FilesTab
 from search_ui import SearchTab
 from chat_ui import ChatTab
-from styles import COLORS, FRAME_STYLES, TAB_STYLES, TEXT_STYLES
+from styles import COLORS, FRAME_STYLES, TAB_STYLES, TEXT_STYLES, CURRENT_THEME, save_theme
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -16,20 +15,18 @@ class NeuroVault(ctk.CTk):
     def __init__(self):
         super().__init__()
         
-        # Window setup
-        self.title("🧠 NeuroVault - AI Second Brain")
+        self.title("⚡ NeuroVault - AI Second Brain")
         self.geometry("1200x800")
         self.minsize(1000, 600)
-        
-        # Configure window background
         self.configure(fg_color=COLORS['bg_primary'])
         
-        # Create UI
+        self.current_theme = CURRENT_THEME
+        
         self.create_header()
         self.create_main_content()
         
     def create_header(self):
-        """Create modern header with gradient effect"""
+        """Create modern header with theme toggle"""
         header = ctk.CTkFrame(
             self,
             height=80,
@@ -39,49 +36,116 @@ class NeuroVault(ctk.CTk):
         header.pack(fill="x", padx=0, pady=0)
         header.pack_propagate(False)
         
-        # Title with emoji and tagline
+        # Logo and title on left
         title_frame = ctk.CTkFrame(header, fg_color="transparent")
         title_frame.pack(side="left", padx=30, pady=15)
         
+        # Logo with box
+        logo_container = ctk.CTkFrame(
+            title_frame, 
+            fg_color=COLORS['bg_tertiary'], 
+            corner_radius=8, 
+            width=45, 
+            height=45
+        )
+        logo_container.pack(side="left", padx=(0, 12))
+        logo_container.pack_propagate(False)
+        
+        logo = ctk.CTkLabel(
+            logo_container,
+            text="N",
+            font=('Segoe UI', 24, 'bold'),
+            text_color=COLORS['accent_primary']
+        )
+        logo.place(relx=0.5, rely=0.5, anchor="center")
+        
+        # Title text
+        title_text_frame = ctk.CTkFrame(title_frame, fg_color="transparent")
+        title_text_frame.pack(side="left")
+        
         title = ctk.CTkLabel(
-            title_frame,
-            text="🧠 NeuroVault",
+            title_text_frame,
+            text="NeuroVault",
             font=TEXT_STYLES['title'],
             text_color=COLORS['accent_primary']
         )
         title.pack(anchor="w")
         
         tagline = ctk.CTkLabel(
-            title_frame,
+            title_text_frame,
             text="Your AI-Powered Second Brain",
-            font=TEXT_STYLES['caption'],  # Changed from 'small'
+            font=TEXT_STYLES['caption'],
             text_color=COLORS['text_secondary']
         )
         tagline.pack(anchor="w")
         
+        # Controls on right
+        controls_frame = ctk.CTkFrame(header, fg_color="transparent")
+        controls_frame.pack(side="right", padx=30, pady=15)
+        
+        # Theme toggle button with current theme indicator
+        theme_icon = "🌙" if self.current_theme == "dark" else "☀️"
+        theme_text = f"{theme_icon} Theme"
+        
+        theme_btn = ctk.CTkButton(
+            controls_frame,
+            text=theme_text,
+            command=self.toggle_theme,
+            width=90,
+            height=36,
+            corner_radius=8,
+            fg_color=COLORS['bg_tertiary'],
+            hover_color=COLORS['bg_hover'],
+            text_color=COLORS['text_secondary'],
+            border_width=1,
+            border_color=COLORS['border_medium'],
+            font=TEXT_STYLES['body_small']
+        )
+        theme_btn.pack(side="left", padx=5)
+        
         # Version badge
         version = ctk.CTkLabel(
-            header,
-            text="v2.0",
-            font=TEXT_STYLES['caption'],  # Changed from 'small'
-            text_color=COLORS['text_tertiary'],  # Also update this color
+            controls_frame,
+            text="v3.0",
+            font=TEXT_STYLES['caption'],
+            text_color=COLORS['text_tertiary'],
             fg_color=COLORS['bg_tertiary'],
             corner_radius=6,
             padx=12,
             pady=4
         )
-        version.pack(side="right", padx=30)
+        version.pack(side="left", padx=5)
+        
+    def toggle_theme(self):
+        """Toggle between light and dark themes"""
+        from tkinter import messagebox
+        import os
+        
+        # Determine new theme
+        new_theme = 'light' if self.current_theme == 'dark' else 'dark'
+        new_theme_name = 'Light Mode ☀️' if new_theme == 'light' else 'Dark Mode 🌙'
+        
+        # Confirm with user
+        result = messagebox.askyesno(
+            "Switch Theme 🎨",
+            f"Switch to {new_theme_name}?\n\nThe app will restart automatically.",
+            parent=self
+        )
+        
+        if result:
+            # Save new theme preference
+            save_theme(new_theme)
+            
+            # Restart the app
+            self.destroy()
+            python = sys.executable
+            os.execl(python, python, *sys.argv)
         
     def create_main_content(self):
         """Create main content area with tabs"""
-        # Main container with padding
-        container = ctk.CTkFrame(
-            self,
-            fg_color="transparent"
-        )
+        container = ctk.CTkFrame(self, fg_color="transparent")
         container.pack(fill="both", expand=True, padx=20, pady=(10, 20))
         
-        # Create tabview with modern styling
         self.tabview = ctk.CTkTabview(
             container,
             **TAB_STYLES,
@@ -91,15 +155,13 @@ class NeuroVault(ctk.CTk):
         )
         self.tabview.pack(fill="both", expand=True)
         
-        # Add tabs with icons
         self.tabview.add("Files")
         self.tabview.add("Search")
         self.tabview.add("Chat")
         
-        # Initialize tab content
-        files_tab = FilesTab(self.tabview.tab("Files"))
-        search_tab = SearchTab(self.tabview.tab("Search"))
-        chat_tab = ChatTab(self.tabview.tab("Chat"))
+        FilesTab(self.tabview.tab("Files"))
+        SearchTab(self.tabview.tab("Search"))
+        ChatTab(self.tabview.tab("Chat"))
 
 if __name__ == "__main__":
     app = NeuroVault()
