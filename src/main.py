@@ -6,7 +6,8 @@ import os
 from datetime import datetime
 from parser import parse_file
 from search_ui import SearchFrame
-from embeddings import add_document_to_db, delete_document_from_db
+# from chat_ui import ChatFrame
+from embeddings import add_document_to_db, delete_document_from_db, get_collection_stats
 
 # App theme
 ctk.set_appearance_mode("dark")
@@ -33,7 +34,7 @@ class NeuroVault:
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS documents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                filename TEXT NOT NULL,
+                filename TEXT NOT NULL UNIQUE,
                 content TEXT,
                 file_path TEXT,
                 file_type TEXT,
@@ -146,9 +147,14 @@ class NeuroVault:
         search_tab = self.tabview.add("🔍 Search")
         self.search_frame = SearchFrame(search_tab, fg_color="transparent")
         self.search_frame.pack(fill="both", expand=True)
+        
+        # # Tab 3: AI Chat
+        # chat_tab = self.tabview.add("💬 Chat")
+        # self.chat_frame = ChatFrame(chat_tab, fg_color="transparent")
+        # self.chat_frame.pack(fill="both", expand=True)
     
     def upload_file(self):
-        """Handle file upload"""
+        """Handle file upload with proper error handling"""
         filetypes = [
             ("All supported", "*.txt *.pdf *.docx *.py"),
             ("Text files", "*.txt"),
@@ -170,13 +176,28 @@ class NeuroVault:
             file_size = os.path.getsize(file_path)
             file_type = os.path.splitext(filename)[1]
             
-            # Parse file with proper parser
+            # Check if file already exists
+            existing = self.cursor.execute(
+                'SELECT filename FROM documents WHERE filename = ?', 
+                (filename,)
+            ).fetchone()
+            
+            if existing:
+                if not messagebox.askyesno(
+                    "File Exists", 
+                    f"{filename} already exists. Replace it?"
+                ):
+                    return
+                # Delete old version first
+                self.delete_file_by_name(filename)
+            
+            # Parse file
             self.status_label.configure(text=f"⏳ Parsing {filename}...")
             self.root.update()
             
             content, word_count = parse_file(file_path)
             
-            # Save to database
+            # Save to SQLite
             self.cursor.execute('''
                 INSERT INTO documents 
                 (filename, content, file_path, file_type, file_size, word_count, added_date)
@@ -192,24 +213,54 @@ class NeuroVault:
             ))
             self.conn.commit()
             
-            # Add to ChromaDB for semantic search
+            # Add to ChromaDB
             self.status_label.configure(text=f"⏳ Adding to AI search index...")
             self.root.update()
-            add_document_to_db(filename, filename, content)
+            
+            success = add_document_to_db(filename, filename, content)
+            
+            if not success:
+                raise Exception("Failed to add to vector database")
+            
+            # Verify embedding worked
+            stats = get_collection_stats()
             
             self.status_label.configure(
-                text=f"✅ Added: {filename} ({file_size/1024:.1f} KB, {word_count} words)"
+                text=f"✅ Added: {filename} ({file_size/1024:.1f} KB, {word_count} words) | Total chunks: {stats['total_chunks']}"
             )
             self.load_files()
             messagebox.showinfo("Success", 
-                              f"Added {filename}\n\n"
+                              f"✅ {filename} added successfully!\n\n"
                               f"Size: {file_size/1024:.1f} KB\n"
-                              f"Words: {word_count:,}\n\n"
-                              f"Now searchable with AI! 🧠")
+                              f"Words: {word_count:,}\n"
+                              f"Searchable: Yes 🧠\n\n"
+                              f"Total indexed chunks: {stats['total_chunks']}")
             
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to upload:\n{str(e)}")
+            # Rollback if embedding failed
+            self.cursor.execute('DELETE FROM documents WHERE filename = ?', (filename,))
+            self.conn.commit()
+            delete_document_from_db(filename)
+            
+            messagebox.showerror("Upload Error", 
+                               f"Failed to upload {filename}:\n\n{str(e)}\n\n"
+                               f"File was not added.")
             self.status_label.configure(text="❌ Upload failed")
+            print(f"Upload error: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def delete_file_by_name(self, filename):
+        """Helper to delete file by name"""
+        try:
+            # Delete from ChromaDB first
+            delete_document_from_db(filename)
+            
+            # Delete from SQLite
+            self.cursor.execute('DELETE FROM documents WHERE filename = ?', (filename,))
+            self.conn.commit()
+        except Exception as e:
+            print(f"Delete error: {e}")
     
     def load_files(self):
         """Load files into listbox"""
@@ -223,6 +274,13 @@ class NeuroVault:
         for row in self.cursor.fetchall():
             display_text = f"{row[1]} {row[0]} ({row[2]:,} words) - {row[3][:16]}"
             self.file_listbox.insert(tk.END, display_text)
+        
+        # Update status with chunk count
+        stats = get_collection_stats()
+        file_count = self.cursor.execute('SELECT COUNT(*) FROM documents').fetchone()[0]
+        self.status_label.configure(
+            text=f"📊 {file_count} files | {stats['total_chunks']} searchable chunks"
+        )
     
     def on_file_select(self, event):
         """Enable buttons when file selected"""
@@ -246,67 +304,72 @@ class NeuroVault:
         
         result = self.cursor.fetchone()
         if result:
-            # Create preview window
             preview = tk.Toplevel(self.root)
             preview.title(f"Preview: {result[0]}")
             preview.geometry("700x500")
             
-            # Info label
             info_label = tk.Label(preview, 
                                 text=f"File: {result[0]} | Words: {result[2]:,}", 
                                 bg="#2b2b2b", fg="#ffffff")
             info_label.pack(fill="x", padx=10, pady=10)
             
-            # Text widget
             text_widget = tk.Text(preview, wrap=tk.WORD, font=("Consolas", 11))
-            text_widget.insert("1.0", result[1][:5000])  # First 5000 chars
+            text_widget.insert("1.0", result[1][:5000])
             text_widget.pack(fill="both", expand=True, padx=10, pady=(0,10))
             
-            # Note if truncated
             if len(result[1]) > 5000:
                 note = tk.Label(preview, 
-                              text="(Showing first 5000 characters - file is longer)", 
+                              text="(Showing first 5000 characters)", 
                               bg="#2b2b2b", fg="#999999")
                 note.pack(fill="x", padx=10, pady=(0,10))
     
     def delete_file(self):
-        """Delete selected file"""
+        """Delete selected file from both databases"""
         selection = self.file_listbox.curselection()
         if not selection:
             return
         
-        if not messagebox.askyesno("Confirm Delete", 
-                                   "Delete this file from NeuroVault?"):
-            return
-        
         idx = selection[0]
         
-        # Get filename for ChromaDB deletion
+        # Get filename
         self.cursor.execute('''
             SELECT filename FROM documents 
             ORDER BY added_date DESC 
             LIMIT 1 OFFSET ?
         ''', (idx,))
-        filename = self.cursor.fetchone()[0]
+        result = self.cursor.fetchone()
         
-        # Delete from ChromaDB
-        delete_document_from_db(filename)
+        if not result:
+            return
         
-        # Delete from SQLite
-        self.cursor.execute('''
-            DELETE FROM documents 
-            WHERE id = (
-                SELECT id FROM documents 
-                ORDER BY added_date DESC 
-                LIMIT 1 OFFSET ?
+        filename = result[0]
+        
+        if not messagebox.askyesno("Confirm Delete", 
+                                   f"Delete {filename} from NeuroVault?"):
+            return
+        
+        try:
+            # Delete from ChromaDB
+            self.status_label.configure(text=f"⏳ Removing {filename} from index...")
+            self.root.update()
+            delete_document_from_db(filename)
+            
+            # Delete from SQLite
+            self.cursor.execute('DELETE FROM documents WHERE filename = ?', (filename,))
+            self.conn.commit()
+            
+            self.load_files()
+            self.preview_btn.configure(state="disabled")
+            self.delete_btn.configure(state="disabled")
+            
+            stats = get_collection_stats()
+            self.status_label.configure(
+                text=f"✅ Deleted {filename} | Remaining chunks: {stats['total_chunks']}"
             )
-        ''', (idx,))
-        self.conn.commit()
-        
-        self.load_files()
-        self.preview_btn.configure(state="disabled")
-        self.delete_btn.configure(state="disabled")
-        self.status_label.configure(text="File deleted from all indexes")
+            
+        except Exception as e:
+            messagebox.showerror("Delete Error", f"Failed to delete:\n{str(e)}")
+            print(f"Delete error: {e}")
     
     def run(self):
         """Start the app"""
