@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 from parser import parse_file
 from search_ui import SearchFrame
-# from chat_ui import ChatFrame
+from chat_ui import ChatFrame
 from embeddings import add_document_to_db, delete_document_from_db, get_collection_stats
 
 # App theme
@@ -148,10 +148,10 @@ class NeuroVault:
         self.search_frame = SearchFrame(search_tab, fg_color="transparent")
         self.search_frame.pack(fill="both", expand=True)
         
-        # # Tab 3: AI Chat
-        # chat_tab = self.tabview.add("💬 Chat")
-        # self.chat_frame = ChatFrame(chat_tab, fg_color="transparent")
-        # self.chat_frame.pack(fill="both", expand=True)
+        # Tab 3: AI Chat
+        chat_tab = self.tabview.add("💬 Chat")
+        self.chat_frame = ChatFrame(chat_tab, fg_color="transparent")
+        self.chat_frame.pack(fill="both", expand=True)
     
     def upload_file(self):
         """Handle file upload with proper error handling"""

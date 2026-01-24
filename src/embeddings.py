@@ -1,156 +1,192 @@
-"""
-Embeddings and vector database management for NeuroVault
-Uses ChromaDB for semantic search
-"""
-
 import chromadb
-from sentence_transformers import SentenceTransformer
+from chromadb.config import Settings
 import os
 
 # Initialize ChromaDB client
-db_path = "data/chroma_db"
-os.makedirs(db_path, exist_ok=True)
+CHROMA_PATH = "data/chroma_db"
+os.makedirs(CHROMA_PATH, exist_ok=True)
 
-# Use local embedding model
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+client = chromadb.PersistentClient(
+    path=CHROMA_PATH,
+    settings=Settings(
+        anonymized_telemetry=False,
+        allow_reset=True
+    )
+)
 
-# ChromaDB client
-client = chromadb.PersistentClient(path=db_path)
+COLLECTION_NAME = "neurovault_documents"
 
-def get_or_create_collection(collection_name="neurovault_docs"):
-    """Get or create ChromaDB collection"""
+def get_collection():
+    """Get or create the ChromaDB collection"""
     try:
-        collection = client.get_collection(name=collection_name)
-    except:
-        collection = client.create_collection(
-            name=collection_name,
+        collection = client.get_or_create_collection(
+            name=COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"}
         )
-    return collection
+        return collection
+    except Exception as e:
+        print(f"Error getting collection: {e}")
+        raise
 
-def chunk_text(text, chunk_size=500, overlap=100):
+def chunk_text(text, chunk_size=500, overlap=50):
     """
-    Split text into overlapping chunks for better semantic search
-    chunk_size: characters per chunk
-    overlap: characters to repeat between chunks
-    """
-    chunks = []
-    start = 0
+    Split text into overlapping chunks
     
-    while start < len(text):
-        end = start + chunk_size
-        chunk = text[start:end]
-        
-        if chunk.strip():  # Only add non-empty chunks
+    Args:
+        text: Input text
+        chunk_size: Target size of each chunk (in characters)
+        overlap: Overlap between chunks
+    
+    Returns:
+        List of text chunks
+    """
+    if not text or not text.strip():
+        return []
+    
+    words = text.split()
+    chunks = []
+    
+    # Calculate words per chunk (approximate)
+    words_per_chunk = chunk_size // 5  # Avg 5 chars per word
+    overlap_words = overlap // 5
+    
+    for i in range(0, len(words), words_per_chunk - overlap_words):
+        chunk = ' '.join(words[i:i + words_per_chunk])
+        if chunk.strip():
             chunks.append(chunk)
-        
-        start = end - overlap
     
     return chunks
 
 def add_document_to_db(doc_id, filename, content):
     """
-    Add document to ChromaDB with embeddings
+    Add document to ChromaDB with chunking
     
     Args:
-        doc_id: unique document ID
-        filename: original filename
-        content: full text content
+        doc_id: Unique document identifier
+        filename: Name of the file
+        content: Text content to embed
+    
+    Returns:
+        bool: Success status
     """
-    collection = get_or_create_collection()
+    try:
+        collection = get_collection()
+        
+        # Split content into chunks
+        chunks = chunk_text(content)
+        
+        if not chunks:
+            print("Warning: No chunks created from content")
+            return False
+        
+        # Generate IDs and metadata for each chunk
+        ids = [f"{doc_id}_chunk_{i}" for i in range(len(chunks))]
+        metadatas = [{"filename": filename, "chunk_index": i} for i in range(len(chunks))]
+        
+        # Add to collection
+        collection.add(
+            documents=chunks,
+            ids=ids,
+            metadatas=metadatas
+        )
+        
+        print(f"✅ Added {len(chunks)} chunks for {filename}")
+        return True
     
-    # Chunk the document
-    chunks = chunk_text(content)
-    
-    if not chunks:
+    except Exception as e:
+        print(f"Error adding document: {e}")
+        import traceback
+        traceback.print_exc()
         return False
+
+def delete_document_from_db(doc_id):
+    """
+    Delete all chunks of a document from ChromaDB
     
-    # Create unique IDs for each chunk
-    chunk_ids = [f"{doc_id}_chunk_{i}" for i in range(len(chunks))]
+    Args:
+        doc_id: Document identifier to delete
     
-    # Add to ChromaDB (it auto-embeds)
-    collection.add(
-        ids=chunk_ids,
-        documents=chunks,
-        metadatas=[
-            {
-                "source_file": filename,
-                "doc_id": doc_id,
-                "chunk_index": i
-            }
-            for i in range(len(chunks))
-        ]
-    )
+    Returns:
+        bool: Success status
+    """
+    try:
+        collection = get_collection()
+        
+        # Get all IDs for this document
+        all_items = collection.get()
+        doc_ids = [id for id in all_items['ids'] if id.startswith(f"{doc_id}_chunk_")]
+        
+        if doc_ids:
+            collection.delete(ids=doc_ids)
+            print(f"✅ Deleted {len(doc_ids)} chunks for {doc_id}")
+        else:
+            print(f"⚠️ No chunks found for {doc_id}")
+        
+        return True
     
-    return True
+    except Exception as e:
+        print(f"Error deleting document: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 def search_documents(query, top_k=5):
     """
-    Search for relevant documents/chunks
+    Search for relevant documents using semantic similarity
     
     Args:
-        query: search query from user
-        top_k: number of results to return
+        query: Search query text
+        top_k: Number of results to return
     
     Returns:
-        list of (text, source_file, score) tuples
+        List of dicts with keys: text, filename, distance
     """
-    collection = get_or_create_collection()
-    
     try:
+        collection = get_collection()
+        
+        # Check if collection has documents
+        if collection.count() == 0:
+            print("Warning: Collection is empty")
+            return []
+        
+        # Perform search
         results = collection.query(
             query_texts=[query],
-            n_results=top_k
+            n_results=top_k,
+            include=['documents', 'distances', 'metadatas']
         )
-        
-        if not results or not results['documents']:
-            return []
         
         # Format results
         formatted_results = []
-        for i, doc in enumerate(results['documents'][0]):
-            score = results['distances'][0][i] if 'distances' in results else 0
-            metadata = results['metadatas'][0][i] if 'metadatas' in results else {}
-            
-            formatted_results.append({
-                'text': doc,
-                'source': metadata.get('source_file', 'Unknown'),
-                'similarity': 1 - score  # Convert distance to similarity
-            })
+        if results['documents'] and len(results['documents'][0]) > 0:
+            for i in range(len(results['documents'][0])):
+                # Get metadata for filename
+                metadata = results['metadatas'][0][i] if results['metadatas'] else {}
+                filename = metadata.get('filename', 'Unknown')
+                
+                formatted_results.append({
+                    'text': results['documents'][0][i],
+                    'filename': filename,
+                    'distance': results['distances'][0][i]
+                })
         
         return formatted_results
     
     except Exception as e:
-        print(f"Search error: {str(e)}")
+        print(f"Search error: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
-def delete_document_from_db(doc_id):
-    """Delete all chunks of a document from ChromaDB"""
-    collection = get_or_create_collection()
-    
-    try:
-        # Get all chunk IDs for this document
-        results = collection.get(
-            where={"doc_id": {"$eq": doc_id}}
-        )
-        
-        if results and results['ids']:
-            collection.delete(ids=results['ids'])
-            return True
-    except Exception as e:
-        print(f"Delete error: {str(e)}")
-        return False
-
-def clear_all_embeddings():
-    """Clear all embeddings (for testing/reset)"""
-    try:
-        client.delete_collection(name="neurovault_docs")
-        return True
-    except:
-        return False
-
 def get_collection_stats():
-    """Get stats about current collection"""
-    collection = get_or_create_collection()
-    count = collection.count()
-    return {"total_chunks": count}
+    """Get statistics about the collection"""
+    try:
+        collection = get_collection()
+        count = collection.count()
+        return {
+            "total_chunks": count,
+            "collection_name": COLLECTION_NAME
+        }
+    except Exception as e:
+        print(f"Error getting stats: {e}")
+        return {"total_chunks": 0, "collection_name": COLLECTION_NAME}
