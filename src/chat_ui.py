@@ -1,266 +1,368 @@
-import customtkinter as ctk
-import tkinter as tk
-from threading import Thread
-import time
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
 
-class ChatFrame(ctk.CTkFrame):
-    """AI Chat interface for querying documents"""
-    
-    def __init__(self, master, **kwargs):
-        super().__init__(master, **kwargs)
-        self.setup_ui()
-        self.chat_history = []
-    
-    def setup_ui(self):
-        """Build chat interface"""
-        # Header
-        header = ctk.CTkLabel(
-            self, 
-            text="💬 Chat with Your Knowledge Base",
-            font=ctk.CTkFont(size=24, weight="bold")
+import customtkinter as ctk
+import threading
+from embeddings import search_documents
+from ai_model import get_ai_response
+from styles import COLORS, BUTTON_STYLES, FRAME_STYLES, TEXT_STYLES, INPUT_STYLES
+
+class ChatTab:
+    def __init__(self, parent):
+        self.parent = parent
+        self.parent.configure(fg_color=COLORS['bg_primary'])
+        
+        # Create modern layout
+        self.create_chat_display()
+        self.create_input_area()
+        
+        # Show welcome message
+        self.show_welcome_message()
+        
+    def create_chat_display(self):
+        """Modern chat display area"""
+        # Container
+        chat_container = ctk.CTkFrame(
+            self.parent,
+            **FRAME_STYLES['card']
         )
-        header.pack(pady=(10,5))
+        chat_container.pack(fill="both", expand=True, padx=20, pady=(20, 10))
         
-        subtitle = ctk.CTkLabel(
-            self,
-            text="Ask questions about your uploaded documents - AI will search and answer",
-            font=ctk.CTkFont(size=12),
-            text_color="gray"
-        )
-        subtitle.pack(pady=(0,10))
-        
-        # Chat display area (FIXED HEIGHT)
-        chat_container = ctk.CTkFrame(self, height=400)
-        chat_container.pack(fill="both", expand=True, padx=20, pady=(0,10))
-        chat_container.pack_propagate(False)  # IMPORTANT: Prevent resizing
-        
-        # Chat history text box
-        self.chat_display = tk.Text(
+        # Scrollable chat area
+        self.chat_frame = ctk.CTkScrollableFrame(
             chat_container,
-            wrap=tk.WORD,
-            font=("Segoe UI", 11),
-            bg="#1a1a1a",
-            fg="#ffffff",
-            padx=15,
-            pady=15,
-            state="disabled",
-            spacing1=5,
-            spacing3=5
+            fg_color="transparent",
+            scrollbar_button_color=COLORS['accent_primary'],
+            scrollbar_button_hover_color=COLORS['accent_hover']
         )
+        self.chat_frame.pack(fill="both", expand=True, padx=15, pady=15)
         
-        scrollbar = tk.Scrollbar(chat_container, command=self.chat_display.yview)
-        self.chat_display.configure(yscrollcommand=scrollbar.set)
-        
-        self.chat_display.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Configure text tags for styling
-        self.chat_display.tag_config("user", foreground="#4a9eff", font=("Segoe UI", 11, "bold"))
-        self.chat_display.tag_config("ai", foreground="#00ff88", font=("Segoe UI", 11, "bold"))
-        self.chat_display.tag_config("context", foreground="#999999", font=("Segoe UI", 10, "italic"))
-        self.chat_display.tag_config("timestamp", foreground="#666666", font=("Segoe UI", 9))
-        
-        # Input area (FIXED AT BOTTOM)
-        input_frame = ctk.CTkFrame(self, height=100)
-        input_frame.pack(fill="x", padx=20, pady=(0,10))
-        input_frame.pack_propagate(False)  # IMPORTANT: Keep fixed height
-        
-        self.input_box = ctk.CTkTextbox(
-            input_frame,
-            height=70,
-            font=ctk.CTkFont(size=13),
-            wrap="word"
+    def create_input_area(self):
+        """Modern input area with send button"""
+        input_container = ctk.CTkFrame(
+            self.parent,
+            fg_color=COLORS['bg_tertiary'],
+            corner_radius=12,
+            border_width=1,
+            border_color=COLORS['border_medium']
         )
-        self.input_box.pack(side="left", fill="both", expand=True, padx=(0,10), pady=5)
-        self.input_box.bind("<Return>", self.on_enter)
-        self.input_box.bind("<Shift-Return>", lambda e: None)
+        input_container.pack(fill="x", padx=20, pady=(0, 20))
+        
+        # Input row
+        input_row = ctk.CTkFrame(input_container, fg_color="transparent")
+        input_row.pack(fill="both", padx=15, pady=15)
+        
+        # Text input
+        self.input_entry = ctk.CTkEntry(
+            input_row,
+            placeholder_text="Ask a question about your documents...",
+            **INPUT_STYLES
+        )
+        self.input_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        self.input_entry.bind("<Return>", lambda e: self.send_message())
         
         # Send button
         self.send_btn = ctk.CTkButton(
-            input_frame,
-            text="Send 🚀",
+            input_row,
+            text="📤 Send",
             command=self.send_message,
-            width=100,
-            height=70,
-            font=ctk.CTkFont(size=15, weight="bold")
+            **BUTTON_STYLES['primary'],
+            width=100
         )
-        self.send_btn.pack(side="right", pady=5)
+        self.send_btn.pack(side="right")
         
-        # Status label (ALWAYS VISIBLE AT BOTTOM)
-        self.status_label = ctk.CTkLabel(
-            self,
-            text="💡 Tip: Ask specific questions about your documents for best results",
-            font=ctk.CTkFont(size=11),
-            text_color="gray",
-            height=25
+    def show_welcome_message(self):
+        """Show welcome message"""
+        welcome_frame = ctk.CTkFrame(
+            self.chat_frame,
+            fg_color=COLORS['bg_secondary'],
+            corner_radius=10,
+            border_width=1,
+            border_color=COLORS['accent_primary']
         )
-        self.status_label.pack(pady=(0,5), fill="x", padx=20)
+        welcome_frame.pack(fill="x", pady=10, padx=10)
         
-        # Add welcome message
-        self.add_system_message(
-            "👋 Welcome! Upload documents in the Files tab, then ask me questions here. "
-            "I'll search through your knowledge base and provide accurate answers with sources."
+        welcome_text = ctk.CTkLabel(
+            welcome_frame,
+            text="🤖 Welcome to NeuroVault Chat!\n\nAsk me anything about your uploaded documents.\nI'll search through your knowledge base and provide accurate answers with sources.",
+            font=TEXT_STYLES['body'],
+            text_color=COLORS['text_primary'],
+            justify="left"
         )
-    
-    def on_enter(self, event):
-        """Handle Enter key press"""
-        if not event.state & 0x1:  # Check if Shift is NOT pressed
-            self.send_message()
-            return "break"  # Prevent newline insertion
-    
+        welcome_text.pack(padx=20, pady=20)
+        
     def send_message(self):
         """Send user message and get AI response"""
-        query = self.input_box.get("1.0", "end-1c").strip()
+        query = self.input_entry.get().strip()
         
         if not query:
             return
-        
+            
         # Clear input
-        self.input_box.delete("1.0", "end")
+        self.input_entry.delete(0, 'end')
         
-        # Add user message
+        # Disable send button
+        self.send_btn.configure(state="disabled", text="⏳ Thinking...")
+        
+        # Display user message
         self.add_user_message(query)
         
-        # Disable send while processing
-        self.send_btn.configure(state="disabled", text="Thinking...")
-        self.status_label.configure(text="🔍 Searching your documents...")
+        # Get response in background thread
+        thread = threading.Thread(target=self.get_ai_response_threaded, args=(query,))
+        thread.daemon = True
+        thread.start()
         
-        # Process in background thread
-        Thread(target=self.process_query, args=(query,), daemon=True).start()
-    
-    def process_query(self, query):
-        """Process query with RAG and stream response"""
+    def get_ai_response_threaded(self, query):
+        """Get AI response in background thread"""
         try:
-            from embeddings import search_documents
-            from ai_model import get_ai_response
+            # Show searching message
+            self.parent.after(0, self.add_system_message, "🔍 Searching your documents...")
             
-            # Search for relevant context
+            # Search for relevant documents
             results = search_documents(query, top_k=3)
             
             if not results:
-                self.add_ai_message(
-                    "❌ I couldn't find any relevant information in your knowledge base. "
-                    "Try uploading some documents first!"
-                )
-                self.reset_ui()
+                self.parent.after(0, self.add_ai_message, "❌ No relevant documents found. Please upload documents first!")
+                self.parent.after(0, self.enable_send_button)
                 return
-            
-            # Build context from search results
-            context_parts = []
-            sources = []
-            
-            for i, result in enumerate(results, 1):
-                context_parts.append(f"[Source {i}] {result['text']}")
-                sources.append(f"📄 {result['filename']} (relevance: {result['distance']:.2f})")
-            
-            context = "\n\n".join(context_parts)
-            
+                
             # Show sources
-            self.add_context_message(
-                f"Found {len(results)} relevant passages:\n" + "\n".join(sources)
-            )
+            sources_text = "📚 Sources:\n" + "\n".join([
+                f"📄 {r.get('filename', 'Unknown')} (relevance: {r.get('score', 0):.2f})"
+                for r in results
+            ])
+            self.parent.after(0, self.add_system_message, sources_text)
+            
+            # Prepare context from search results
+            context = "\n\n".join([r.get('content', '')[:500] for r in results])
+            
+            # Create prompt
+            prompt = f"""Answer the user's question based ONLY on the provided context from their documents.
+
+            Context from documents:
+            {context}
+
+            User question: {query}
+
+            Format your response clearly using:
+            - Use numbered lists (1. 2. 3.) for sequential points
+            - Use bullet points (- or •) for non-sequential items
+            - Add a header line ending with : before grouped information
+            - Keep paragraphs concise (2-3 sentences max)
+            - Use line breaks between sections
+
+            Provide a clear, well-structured answer. If the context doesn't contain enough information, say so."""
+            
+            # Show generating message
+            self.parent.after(0, self.add_system_message, "🤖 Generating answer...")
             
             # Get AI response
-            self.status_label.configure(text="🤖 Generating answer...")
+            response = get_ai_response(prompt, max_tokens=500)
             
-            prompt = f"""You are a helpful AI assistant. Answer the user's question based ONLY on the provided context from their documents.
-
-Context from documents:
-{context}
-
-User question: {query}
-
-Instructions:
-- Answer directly and concisely
-- Use information from the context above
-- If the context doesn't contain enough information, say so
-- Cite sources by mentioning document names when relevant
-
-Answer:"""
-            
-            response = get_ai_response(prompt)
-            
-            # Stream the response
-            self.stream_ai_message(response)
+            # Display AI response
+            self.parent.after(0, self.add_ai_message, response)
             
         except Exception as e:
-            self.add_ai_message(f"❌ Error: {str(e)}")
-            print(f"Chat error: {e}")
-            import traceback
-            traceback.print_exc()
-        
+            error_msg = f"❌ Error: {str(e)}"
+            self.parent.after(0, self.add_ai_message, error_msg)
+            
         finally:
-            self.reset_ui()
-    
+            # Re-enable send button
+            self.parent.after(0, self.enable_send_button)
+            
     def add_user_message(self, message):
-        """Add user message to chat"""
-        self.chat_display.configure(state="normal")
-        
-        timestamp = time.strftime("%H:%M")
-        
-        self.chat_display.insert("end", f"\n🙋 You ", "user")
-        self.chat_display.insert("end", f"({timestamp})\n", "timestamp")
-        self.chat_display.insert("end", f"{message}\n")
-        
-        self.chat_display.configure(state="disabled")
-        self.chat_display.see("end")
-    
-    def add_ai_message(self, message):
-        """Add AI message to chat"""
-        self.chat_display.configure(state="normal")
-        
-        timestamp = time.strftime("%H:%M")
-        
-        self.chat_display.insert("end", f"\n🤖 AI Assistant ", "ai")
-        self.chat_display.insert("end", f"({timestamp})\n", "timestamp")
-        self.chat_display.insert("end", f"{message}\n")
-        
-        self.chat_display.configure(state="disabled")
-        self.chat_display.see("end")
-    
-    def stream_ai_message(self, message):
-        """Stream AI message word by word"""
-        self.chat_display.configure(state="normal")
-        
-        timestamp = time.strftime("%H:%M")
-        
-        self.chat_display.insert("end", f"\n🤖 AI Assistant ", "ai")
-        self.chat_display.insert("end", f"({timestamp})\n", "timestamp")
-        
-        # Stream words
-        words = message.split()
-        for word in words:
-            self.chat_display.insert("end", word + " ")
-            self.chat_display.see("end")
-            self.chat_display.update()
-            time.sleep(0.03)  # Typing effect
-        
-        self.chat_display.insert("end", "\n")
-        self.chat_display.configure(state="disabled")
-        self.chat_display.see("end")
-    
-    def add_context_message(self, message):
-        """Add context/system message"""
-        self.chat_display.configure(state="normal")
-        
-        self.chat_display.insert("end", f"\n📚 Sources:\n", "context")
-        self.chat_display.insert("end", f"{message}\n", "context")
-        
-        self.chat_display.configure(state="disabled")
-        self.chat_display.see("end")
-    
-    def add_system_message(self, message):
-        """Add system message"""
-        self.chat_display.configure(state="normal")
-        
-        self.chat_display.insert("end", f"\n💡 System:\n{message}\n")
-        
-        self.chat_display.configure(state="disabled")
-        self.chat_display.see("end")
-    
-    def reset_ui(self):
-        """Reset UI after response"""
-        self.send_btn.configure(state="normal", text="Send 🚀")
-        self.status_label.configure(
-            text="💡 Tip: Ask specific questions about your documents for best results"
+        """Add user message bubble"""
+        msg_frame = ctk.CTkFrame(
+            self.chat_frame,
+            fg_color=COLORS['accent_primary'],
+            corner_radius=10
         )
+        msg_frame.pack(anchor="e", pady=5, padx=10, fill="x", expand=False)
+        
+        msg_label = ctk.CTkLabel(
+            msg_frame,
+            text=f"👤 You\n\n{message}",
+            font=TEXT_STYLES['body'],
+            text_color='#ffffff',
+            justify="left",
+            wraplength=700,
+            anchor="w"
+        )
+        msg_label.pack(padx=15, pady=10, anchor="w")
+        
+        self.chat_frame._parent_canvas.yview_moveto(1.0)
+        
+    def add_ai_message(self, message):
+        """Add AI message bubble with formatting"""
+        msg_frame = ctk.CTkFrame(
+            self.chat_frame,
+            fg_color=COLORS['bg_secondary'],
+            corner_radius=10,
+            border_width=1,
+            border_color=COLORS['border_subtle']
+        )
+        msg_frame.pack(anchor="w", pady=5, padx=10, fill="x", expand=False)
+        
+        # Header with icon
+        header = ctk.CTkLabel(
+            msg_frame,
+            text="🤖 NeuroVault",
+            font=TEXT_STYLES['heading'],
+            text_color=COLORS['accent_primary'],
+            anchor="w"
+        )
+        header.pack(anchor="w", padx=15, pady=(10, 5))
+        
+        # Parse and render formatted content
+        self.render_formatted_text(msg_frame, message)
+        
+        self.chat_frame._parent_canvas.yview_moveto(1.0)
+        
+    def render_formatted_text(self, parent, text):
+        """Render text with enhanced Markdown-like formatting"""
+        lines = text.split('\n')
+        
+        content_frame = ctk.CTkFrame(parent, fg_color='transparent')
+        content_frame.pack(fill="x", padx=15, pady=(0, 10))
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            
+            if not line:
+                i += 1
+                continue
+            
+            # **Bold headers** or *Bold:*
+            if (line.startswith('**') and line.endswith('**')) or (line.startswith('*') and line.endswith('*')):
+                # Remove ** or *
+                clean_line = line.replace('**', '').replace('*', '')
+                
+                label = ctk.CTkLabel(
+                    content_frame,
+                    text=clean_line,
+                    font=TEXT_STYLES['subtitle'],
+                    text_color=COLORS['text_primary'],
+                    anchor="w",
+                    justify="left"
+                )
+                label.pack(anchor="w", pady=(12, 4))
+            
+            # Headers ending with : (but not bullets)
+            elif line.endswith(':') and len(line) < 70 and not line.startswith('-') and not line.startswith('*'):
+                label = ctk.CTkLabel(
+                    content_frame,
+                    text=line,
+                    font=TEXT_STYLES['heading'],
+                    text_color=COLORS['accent_primary'],
+                    anchor="w",
+                    justify="left"
+                )
+                label.pack(anchor="w", pady=(10, 4))
+            
+            # Numbered lists (1. 2. 3.)
+            elif len(line) > 2 and line[0].isdigit() and line[1] in ['.', ')']:
+                # Extract number and text
+                sep = '.' if '.' in line[:4] else ')'
+                parts = line.split(sep, 1)
+                
+                if len(parts) == 2:
+                    num, txt = parts
+                    txt = txt.strip()
+                    
+                    list_frame = ctk.CTkFrame(content_frame, fg_color='transparent')
+                    list_frame.pack(anchor="w", pady=3, fill="x")
+                    
+                    # Number badge
+                    num_label = ctk.CTkLabel(
+                        list_frame,
+                        text=f"{num}",
+                        font=TEXT_STYLES['body'],
+                        text_color='#ffffff',
+                        fg_color=COLORS['accent_primary'],
+                        corner_radius=4,
+                        width=28,
+                        height=28
+                    )
+                    num_label.pack(side="left", anchor="n", pady=2)
+                    
+                    # Text
+                    text_label = ctk.CTkLabel(
+                        list_frame,
+                        text=txt,
+                        font=TEXT_STYLES['body'],
+                        text_color=COLORS['text_primary'],
+                        anchor="w",
+                        justify="left",
+                        wraplength=630
+                    )
+                    text_label.pack(side="left", fill="x", expand=True, padx=(10, 0))
+            
+            # Bullet points (- or * or •)
+            elif line.startswith('- ') or line.startswith('* ') or line.startswith('• '):
+                txt = line[2:].strip()
+                
+                bullet_frame = ctk.CTkFrame(content_frame, fg_color='transparent')
+                bullet_frame.pack(anchor="w", pady=3, fill="x")
+                
+                # Bullet
+                bullet_label = ctk.CTkLabel(
+                    bullet_frame,
+                    text="●",
+                    font=('Segoe UI', 14, 'bold'),
+                    text_color=COLORS['accent_primary'],
+                    width=28,
+                    anchor="center"
+                )
+                bullet_label.pack(side="left", anchor="n")
+                
+                # Text
+                text_label = ctk.CTkLabel(
+                    bullet_frame,
+                    text=txt,
+                    font=TEXT_STYLES['body'],
+                    text_color=COLORS['text_primary'],
+                    anchor="w",
+                    justify="left",
+                    wraplength=630
+                )
+                text_label.pack(side="left", fill="x", expand=True, padx=(10, 0))
+            
+            # Regular paragraph
+            else:
+                # Handle inline **bold**
+                if '**' in line:
+                    # For now, just show as is (advanced: split and render separately)
+                    pass
+                
+                label = ctk.CTkLabel(
+                    content_frame,
+                    text=line,
+                    font=TEXT_STYLES['body'],
+                    text_color=COLORS['text_secondary'],
+                    anchor="w",
+                    justify="left",
+                    wraplength=680
+                )
+                label.pack(anchor="w", pady=4)
+            
+            i += 1
+        
+    def add_system_message(self, message):
+        """Add system message (non-bubble)"""
+        msg_label = ctk.CTkLabel(
+            self.chat_frame,
+            text=message,
+            font=TEXT_STYLES['caption'],
+            text_color=COLORS['text_tertiary'],
+            justify="left",
+            anchor="w"
+        )
+        msg_label.pack(anchor="w", pady=2, padx=15)
+        
+        self.chat_frame._parent_canvas.yview_moveto(1.0)
+        
+    def enable_send_button(self):
+        """Re-enable send button"""
+        self.send_btn.configure(state="normal", text="📤 Send")

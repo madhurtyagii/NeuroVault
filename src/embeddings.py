@@ -164,11 +164,12 @@ def search_documents(query, top_k=5):
                 metadata = results['metadatas'][0][i] if results['metadatas'] else {}
                 filename = metadata.get('filename', 'Unknown')
                 
-                formatted_results.append({
-                    'text': results['documents'][0][i],
-                    'filename': filename,
-                    'distance': results['distances'][0][i]
-                })
+            formatted_results.append({
+                'content': results['documents'][0][i],
+                'filename': filename,
+                'score': 1 - results['distances'][0][i]
+            })
+
         
         return formatted_results
     
