@@ -4,7 +4,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import customtkinter as ctk
 from embeddings import search_documents
+from database import save_search, get_search_history
 from styles import COLORS, BUTTON_STYLES, FRAME_STYLES, TEXT_STYLES, INPUT_STYLES
+from ui_components import LoadingSpinner, show_toast
 
 class SearchTab:
     def __init__(self, parent):
@@ -13,6 +15,9 @@ class SearchTab:
         
         # Track expanded cards
         self.expanded_cards = {}
+        
+        # Track loading spinner
+        self.current_spinner = None
         
         # Create modern layout
         self.create_search_bar()
@@ -66,14 +71,28 @@ class SearchTab:
         self.search_entry.bind("<Return>", lambda e: self.perform_search())
         
         # Search button
-        search_btn = ctk.CTkButton(
+        self.search_btn = ctk.CTkButton(
             input_row,
             text="Search",
             command=self.perform_search,
             **BUTTON_STYLES['primary'],
-            width=120
+            width=100
         )
-        search_btn.pack(side="right")
+        self.search_btn.pack(side="right", padx=(0, 8))
+        
+        # History button
+        self.history_btn = ctk.CTkButton(
+            input_row,
+            text="📜",
+            command=self.show_history_dialog,
+            width=40,
+            height=36,
+            corner_radius=8,
+            fg_color=COLORS['bg_tertiary'],
+            hover_color=COLORS['accent_hover'],
+            text_color=COLORS['text_primary']
+        )
+        self.history_btn.pack(side="right")
         
     def create_results_area(self):
         """Premium results display"""
@@ -120,25 +139,50 @@ class SearchTab:
         text.pack(pady=(10, 0))
         
     def perform_search(self):
-        """Perform semantic search"""
+        """Perform semantic search with loading spinner"""
         query = self.search_entry.get().strip()
         
         if not query:
+            show_toast("Please enter a search query", "warning", 2000)
             return
             
         # Clear previous results
         for widget in self.results_frame.winfo_children():
             widget.destroy()
         self.expanded_cards = {}
-            
+        
+        # Disable search button
+        self.search_btn.configure(state="disabled", text="⏳ Searching...")
+        
+        # Show loading spinner
+        self.current_spinner = LoadingSpinner(
+            self.results_frame,
+            message=f"Searching for '{query}'...",
+            style='dots'
+        )
+        
+        # Run search after brief delay to allow spinner to render
+        self.parent.after(100, lambda: self._do_search(query))
+    
+    def _do_search(self, query):
+        """Execute the actual search"""
         try:
             # Perform search
             results = search_documents(query, top_k=5)
             
+            # Remove spinner
+            if self.current_spinner:
+                self.current_spinner.stop()
+                self.current_spinner = None
+            
             if not results:
-                # No results
+                # No results - still save to history
+                save_search(query, 0)
                 self.show_no_results(query)
                 return
+            
+            # Save search to history
+            save_search(query, len(results))
                 
             # Results header
             header = ctk.CTkLabel(
@@ -150,12 +194,18 @@ class SearchTab:
             )
             header.pack(anchor="w", pady=(10, 20), padx=15)
             
-            # Display results
+            # Display results with staggered animation
             for i, result in enumerate(results):
-                self.create_result_card(i, result)
+                self.parent.after(i * 80, lambda idx=i, res=result: self.create_result_card(idx, res))
                 
         except Exception as e:
+            if self.current_spinner:
+                self.current_spinner.stop()
             self.show_error(str(e))
+            show_toast(f"Search error: {str(e)}", "error", 4000)
+        finally:
+            # Re-enable search button
+            self.search_btn.configure(state="normal", text="Search")
             
     def create_result_card(self, index, result):
         """Premium expandable result card"""
@@ -330,3 +380,99 @@ class SearchTab:
             text_color=COLORS['error']
         )
         text.pack(pady=(10, 0))
+    
+    def show_history_dialog(self):
+        """Show search history dialog"""
+        history = get_search_history(limit=50)
+        
+        if not history:
+            show_toast("No search history yet", "info", 2000)
+            return
+        
+        dialog = ctk.CTkToplevel(self.parent)
+        dialog.title("📜 Search History")
+        dialog.geometry("550x450")
+        dialog.configure(fg_color=COLORS['bg_primary'])
+        dialog.transient(self.parent.winfo_toplevel())
+        dialog.grab_set()
+        
+        # Center
+        dialog.update_idletasks()
+        x = self.parent.winfo_toplevel().winfo_x() + (self.parent.winfo_toplevel().winfo_width() // 2) - 275
+        y = self.parent.winfo_toplevel().winfo_y() + (self.parent.winfo_toplevel().winfo_height() // 2) - 225
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Header
+        header = ctk.CTkLabel(
+            dialog,
+            text="📜 Search History",
+            font=('Segoe UI', 16, 'bold'),
+            text_color=COLORS['text_primary']
+        )
+        header.pack(pady=(20, 15))
+        
+        # History list
+        list_frame = ctk.CTkScrollableFrame(
+            dialog,
+            fg_color=COLORS['bg_secondary'],
+            corner_radius=10,
+            height=320
+        )
+        list_frame.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+        
+        def rerun_search(query):
+            dialog.destroy()
+            self.search_entry.delete(0, 'end')
+            self.search_entry.insert(0, query)
+            self.perform_search()
+            show_toast(f"🔄 Re-ran: {query}", "info", 2000)
+        
+        for search_id, query, timestamp, results_count in history:
+            row = ctk.CTkFrame(list_frame, fg_color=COLORS['bg_tertiary'], corner_radius=8)
+            row.pack(fill="x", pady=4, padx=4)
+            
+            # Info
+            info_frame = ctk.CTkFrame(row, fg_color="transparent")
+            info_frame.pack(side="left", fill="x", expand=True, padx=12, pady=8)
+            
+            query_label = ctk.CTkLabel(
+                info_frame,
+                text=query[:50] + "..." if len(query) > 50 else query,
+                font=('Segoe UI', 12, 'bold'),
+                text_color=COLORS['text_primary'],
+                anchor="w"
+            )
+            query_label.pack(anchor="w")
+            
+            meta_label = ctk.CTkLabel(
+                info_frame,
+                text=f"{timestamp}  •  {results_count} results",
+                font=('Segoe UI', 10),
+                text_color=COLORS['text_muted'],
+                anchor="w"
+            )
+            meta_label.pack(anchor="w")
+            
+            # Re-run button
+            rerun_btn = ctk.CTkButton(
+                row,
+                text="▶️",
+                command=lambda q=query: rerun_search(q),
+                width=36,
+                height=32,
+                corner_radius=8,
+                fg_color=COLORS['accent_primary'],
+                hover_color=COLORS['accent_hover']
+            )
+            rerun_btn.pack(side="right", padx=8, pady=8)
+        
+        # Close button
+        ctk.CTkButton(
+            dialog,
+            text="Close",
+            command=dialog.destroy,
+            width=100,
+            fg_color=COLORS['bg_tertiary'],
+            hover_color=COLORS['text_muted']
+        ).pack(pady=(0, 20))
+

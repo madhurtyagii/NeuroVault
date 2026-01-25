@@ -3,10 +3,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 import customtkinter as ctk
+from PIL import Image
 from files_ui import FilesTab
 from search_ui import SearchTab
 from chat_ui import ChatTab
 from styles import COLORS, FRAME_STYLES, TAB_STYLES, TEXT_STYLES, CURRENT_THEME, save_theme
+from ui_components import init_toast_manager, show_toast
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -21,6 +23,9 @@ class NeuroVault(ctk.CTk):
         self.configure(fg_color=COLORS['bg_primary'])
         
         self.current_theme = CURRENT_THEME
+        
+        # Initialize global toast manager
+        init_toast_manager(self)
         
         self.create_header()
         self.create_main_content()
@@ -40,24 +45,39 @@ class NeuroVault(ctk.CTk):
         title_frame = ctk.CTkFrame(header, fg_color="transparent")
         title_frame.pack(side="left", padx=30, pady=15)
         
-        # Logo with box
-        logo_container = ctk.CTkFrame(
-            title_frame, 
-            fg_color=COLORS['bg_tertiary'], 
-            corner_radius=8, 
-            width=45, 
-            height=45
-        )
-        logo_container.pack(side="left", padx=(0, 12))
-        logo_container.pack_propagate(False)
-        
-        logo = ctk.CTkLabel(
-            logo_container,
-            text="N",
-            font=('Segoe UI', 24, 'bold'),
-            text_color=COLORS['accent_primary']
-        )
-        logo.place(relx=0.5, rely=0.5, anchor="center")
+        # Load and display logo image
+        logo_path = Path(__file__).parent.parent / 'assets' / 'logo.png'
+        if logo_path.exists():
+            logo_image = ctk.CTkImage(
+                light_image=Image.open(logo_path),
+                dark_image=Image.open(logo_path),
+                size=(50, 50)
+            )
+            logo_label = ctk.CTkLabel(
+                title_frame,
+                image=logo_image,
+                text=""
+            )
+            logo_label.pack(side="left", padx=(0, 12))
+        else:
+            # Fallback to text logo if image not found
+            logo_container = ctk.CTkFrame(
+                title_frame, 
+                fg_color=COLORS['bg_tertiary'], 
+                corner_radius=8, 
+                width=50, 
+                height=50
+            )
+            logo_container.pack(side="left", padx=(0, 12))
+            logo_container.pack_propagate(False)
+            
+            logo = ctk.CTkLabel(
+                logo_container,
+                text="N",
+                font=('Segoe UI', 24, 'bold'),
+                text_color=COLORS['accent_primary']
+            )
+            logo.place(relx=0.5, rely=0.5, anchor="center")
         
         # Title text
         title_text_frame = ctk.CTkFrame(title_frame, fg_color="transparent")
@@ -118,28 +138,25 @@ class NeuroVault(ctk.CTk):
         
     def toggle_theme(self):
         """Toggle between light and dark themes"""
-        from tkinter import messagebox
         import os
         
         # Determine new theme
         new_theme = 'light' if self.current_theme == 'dark' else 'dark'
         new_theme_name = 'Light Mode ☀️' if new_theme == 'light' else 'Dark Mode 🌙'
         
-        # Confirm with user
-        result = messagebox.askyesno(
-            "Switch Theme 🎨",
-            f"Switch to {new_theme_name}?\n\nThe app will restart automatically.",
-            parent=self
-        )
+        # Show toast notification
+        show_toast(f"Switching to {new_theme_name}...", "info", 2000)
         
-        if result:
-            # Save new theme preference
-            save_theme(new_theme)
-            
-            # Restart the app
+        # Save new theme preference
+        save_theme(new_theme)
+        
+        # Restart the app after brief delay to show toast
+        def restart():
             self.destroy()
             python = sys.executable
             os.execl(python, python, *sys.argv)
+        
+        self.after(800, restart)
         
     def create_main_content(self):
         """Create main content area with tabs"""

@@ -70,39 +70,48 @@ if CURRENT_THEME == 'light':
         'hover': '#e2e8f0',
     }
 else:
-    # Dark Mode Colors (YOUR ORIGINAL!)
+    # Dark Mode Colors - Refined & Sophisticated
     COLORS = {
-        # Dark theme base
-        'bg_primary': '#0a0e27',
-        'bg_secondary': '#151b3d',
-        'bg_tertiary': '#1e2749',
+        # Dark theme base - softer slate grays
+        'bg_primary': '#0f1419',      # Deep charcoal (softer than navy)
+        'bg_secondary': '#1a1f2e',    # Slate gray
+        'bg_tertiary': '#242b3d',     # Lighter slate
         
-        # Accent colors
-        'accent_primary': '#00d4ff',
-        'accent_secondary': '#7c3aed',
-        'accent_hover': '#00b8d4',
-        'accent_gradient_1': '#00d4ff',
-        'accent_gradient_2': '#7c3aed',
+        # Accent colors - muted indigo/violet (elegant, not harsh)
+        'accent_primary': '#6366f1',   # Muted indigo
+        'accent_secondary': '#8b5cf6', # Soft violet
+        'accent_hover': '#818cf8',     # Lighter indigo
+        'accent_gradient_1': '#6366f1',
+        'accent_gradient_2': '#a855f7',
         
-        # Text colors
-        'text_primary': '#ffffff',
-        'text_secondary': '#a0aec0',
-        'text_tertiary': '#718096',
-        'text_muted': '#718096',
-        'text_dim': '#4a5568',
+        # Message colors
+        'user_message': '#4f46e5',     # User bubble - deeper indigo
+        'ai_message': '#1e2433',       # AI message background
+        'ai_message_border': '#2d3548', # AI message border
         
-        # Status colors
-        'success': '#10b981',
-        'error': '#ef4444',
-        'warning': '#f59e0b',
-        'info': '#3b82f6',
+        # Text colors - softer contrast
+        'text_primary': '#e2e8f0',     # Off-white (easier on eyes)
+        'text_secondary': '#94a3b8',   # Muted gray
+        'text_tertiary': '#64748b',    # Dimmer gray
+        'text_muted': '#475569',       # Very muted
+        'text_dim': '#334155',         # Subtle
+        
+        # Status colors - slightly muted versions
+        'success': '#22c55e',          # Green
+        'error': '#f43f5e',            # Rose red (softer than pure red)
+        'warning': '#f59e0b',          # Amber
+        'info': '#6366f1',             # Match accent
         
         # UI elements
-        'border': '#2d3748',
-        'border_medium': '#2d3748',
-        'border_subtle': '#2d3748',
-        'bg_hover': '#2d3a5f',
-        'hover': '#2d3a5f',
+        'border': '#2d3548',           # Subtle border
+        'border_medium': '#3d4660',    # Medium border
+        'border_subtle': '#252d3d',    # Very subtle
+        'bg_hover': '#2a3244',         # Hover state
+        'hover': '#2a3244',
+        
+        # Special
+        'code_bg': '#1a1f2b',          # Code block background
+        'scrollbar': '#3d4660',        # Scrollbar color
     }
 
 # Button styles
