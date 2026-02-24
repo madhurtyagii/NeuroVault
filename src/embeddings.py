@@ -1,13 +1,21 @@
 import chromadb
 from chromadb.config import Settings
 import os
+from sentence_transformers import SentenceTransformer
+import warnings
+from pathlib import Path
+
+# Suppress warnings
+warnings.filterwarnings('ignore')
+
+# Get persistent directory for embeddings
+APP_DIR = Path.home() / ".neurovault"
+CHROMA_DIR = APP_DIR / "chroma_db"
+CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
 # Initialize ChromaDB client
-CHROMA_PATH = "data/chroma_db"
-os.makedirs(CHROMA_PATH, exist_ok=True)
-
 client = chromadb.PersistentClient(
-    path=CHROMA_PATH,
+    path=str(CHROMA_DIR),
     settings=Settings(
         anonymized_telemetry=False,
         allow_reset=True

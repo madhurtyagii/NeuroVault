@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 
 # Theme management
-CONFIG_FILE = Path(__file__).parent.parent / 'data' / 'config.json'
+import os
+
+APP_DIR = Path.home() / ".neurovault"
+APP_DIR.mkdir(parents=True, exist_ok=True)
+CONFIG_FILE = APP_DIR / 'config.json'
 
 def load_theme():
     """Load theme preference from config"""

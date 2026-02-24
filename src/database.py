@@ -1,9 +1,14 @@
 import sqlite3
+import json
 from datetime import datetime
 import os
+from pathlib import Path
 
-# Database file path
-DB_PATH = os.path.join("data", "neurovault.db")
+# Ensure neurovault app directory exists in user home
+APP_DIR = Path.home() / ".neurovault"
+APP_DIR.mkdir(parents=True, exist_ok=True)
+
+DB_PATH = str(APP_DIR / "neurovault.db")
 
 def init_db():
     """Initialize database with all required tables"""

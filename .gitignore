@@ -1,15 +1,42 @@
+# Python
 __pycache__/
 *.pyc
-*.exe
-dist/
-build/
-*.spec
-.env
-*.db
-*.db-journal
+*.pyo
+*.egg-info/
+*.egg
+
+# Virtual environments
 .venv/
 venv/
-node_modules/
+env/
+
+# IDE
 .vscode/
-data/*.db
+.idea/
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# Installer temp
+_msi_build_tmp/
+installers/
+
+# Environment & secrets
+.env
+
+# Database & data (now stored in ~/.neurovault/)
+*.db
+*.db-journal
+data/
+
+# Logs
 *.log
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Node
+node_modules/
